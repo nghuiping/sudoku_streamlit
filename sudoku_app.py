@@ -9,7 +9,9 @@ from sudoku_solver import (
     build_general_kb,
     solve_full_grid_fc,
     solve_full_grid_bc,
-    pl_bc_entails)
+    pl_bc_entails,
+    pl_fc_entails_edited,
+    pl_fc_infer_all)
 
 st.title('Sudoku Solver')
 
