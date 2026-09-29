@@ -12,7 +12,6 @@ def atom(prefix, r, c, v):
     """prefix is 'Is' or 'Not'. Returns the Expr for e.g. Is3_2_4."""
     return expr(f'{prefix}{r}_{c}_{v}')
 
-
 def build_general_kb(n, box_h, box_w, givens):
     kb = PropKB()
     for r in range(1, n+1):
@@ -55,9 +54,7 @@ def build_general_kb(n, box_h, box_w, givens):
 
     for (r, c), v in givens.items():
         kb.tell(atom('Is', r, c, v))
-
     return kb
-
 
 def build_definite_kb(n, box_h, box_w, givens):
     kb = PropDefiniteKB()
@@ -125,18 +122,14 @@ def solve_full_grid_fc(n, box_h, box_w, givens):
     return solution 
 
 def pl_bc_entails(kb, query):
-
-    # Build the backward-chaining index once
-    if not hasattr(kb, '_bc_rules'):
+    if not hasattr(kb, '_bc_rules'): # Build the backward-chaining index once
         kb._bc_rules = defaultdict(list)
         kb._bc_facts = set()
 
         for clause in kb.clauses:
-
             if clause.op == '==>':
                 premises, conclusion = parse_definite_clause(clause)
                 kb._bc_rules[conclusion].append(premises)
-
             else:
                 kb._bc_facts.add(clause)
 
@@ -150,41 +143,28 @@ def pl_bc_entails(kb, query):
         kb._bc_failed = {}
 
     def prove(goal, visiting):
-
-        # Already known/proved
-        if goal in kb._bc_proven:
+        if goal in kb._bc_proven: # Already known/proved
             return True
-
-        # Prevent cycles
-        if goal in visiting:
+        if goal in visiting: # Prevent cycles
             return False
-
-        # Already failed when our known information was unchanged
-        if kb._bc_failed.get(goal) == kb._bc_version:
+        if kb._bc_failed.get(goal) == kb._bc_version: # Already failed when our known information was unchanged
             return False
 
         start_version = kb._bc_version
-
         visiting.add(goal)
 
         # Only examine rules whose conclusion is this goal
         for premises in kb._bc_rules.get(goal, []):
-
             if all(prove(p, visiting) for p in premises):
-
                 visiting.remove(goal)
-
                 if goal not in kb._bc_proven:
                     kb._bc_proven.add(goal)
                     kb._bc_version += 1
-
                 return True
 
         visiting.remove(goal)
 
-        # Only remember failure if nothing new was learned
-        # while exploring this goal
-        if kb._bc_version == start_version:
+        if kb._bc_version == start_version: # Only remember failure if nothing new was learned
             kb._bc_failed[goal] = kb._bc_version
 
         return False
@@ -192,36 +172,74 @@ def pl_bc_entails(kb, query):
     # A failed attempt may still have discovered useful intermediate facts.
     # Retry while BC is still learning new facts.
     while True:
-
         version = kb._bc_version
-
         if prove(query, set()):
             return True
-
-        # Nothing new was discovered, so this really is unprovable
-        if kb._bc_version == version:
+        if kb._bc_version == version: # Nothing new was discovered, so this really is unprovable
             return False
 
 def solve_full_grid_bc(n, box_h, box_w, givens):
-
     kb = build_definite_kb(n, box_h, box_w, givens)
     solution = dict(givens)
 
     for r in range(1, n + 1):
         for c in range(1, n + 1):
-
-            # Already given
-            if (r, c) in givens:
+            if (r, c) in givens: # Already given
                 continue
-
-            # Try every possible value
-            for v in range(1, n + 1):
-
-                if pl_bc_entails(
-                    kb,
-                    atom('Is', r, c, v)
-                ):
+            for v in range(1, n + 1): # Try every possible value
+                if pl_bc_entails(kb,atom('Is', r, c, v)):
                     solution[(r, c)] = v
                     break
-
     return solution
+
+### added/modified functions for forward chaining ###
+
+def pl_fc_infer_all(kb):
+    # Run forward chaining once and return every proposition that can be inferred from the KB.
+    count = {}
+    premise_to_clauses = defaultdict(list)
+    agenda = []
+
+    # Build premise -> clauses index
+    for clause in kb.clauses:
+
+        # A fact
+        if is_prop_symbol(clause.op):
+            agenda.append(clause)
+
+        # A definite clause
+        elif clause.op == '==>':
+            premises = conjuncts(clause.args[0])
+            count[clause] = len(premises)
+
+            for premise in premises:
+                premise_to_clauses[premise].append(clause)
+
+    # Use a set because membership checking is fast
+    inferred = set()
+
+    # Forward chaining
+    while agenda:
+        p = agenda.pop()
+
+        # Already processed this fact
+        if p in inferred:
+            continue
+
+        inferred.add(p)
+
+        # Check every rule that uses p as a premise
+        for clause in premise_to_clauses[p]:
+            count[clause] -= 1
+
+            # All premises of this rule have now been inferred
+            if count[clause] == 0:
+                agenda.append(clause.args[1])
+
+    return inferred
+
+
+def pl_fc_entails_edited(kb, q):
+    # Check whether q follows from kb using forward chaining.
+    inferred = pl_fc_infer_all(kb)
+    return q in inferred
